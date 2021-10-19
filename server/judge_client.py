@@ -3,8 +3,8 @@ import hashlib
 import json
 import os
 import shutil
-from multiprocessing import Pool
 import shlex
+from multiprocessing import Pool
 
 import psutil
 
@@ -63,7 +63,7 @@ class JudgeClient(object):
             content = f.read()
         output_md5 = hashlib.md5(content.rstrip()).hexdigest()
         result = output_md5 == self._get_test_case_file_info(test_case_file_id)["stripped_output_md5"]
-        return output_md5, result
+        return output_md5, result, content.rstrip().decode(encoding='utf-8')
 
     def _spj(self, in_file_path, user_out_file_path):
         os.chown(self._submission_dir, SPJ_USER_UID, 0)
@@ -149,6 +149,7 @@ class JudgeClient(object):
         if run_result["result"] == _judger.RESULT_SUCCESS:
             if not os.path.exists(user_output_file):
                 run_result["result"] = _judger.RESULT_WRONG_ANSWER
+                run_result["custom"] = {"data": None, "uout": "未找到文件：输入输出文件名错误!请检查in、out文件名"}
             else:
                 if self._test_case_info.get("spj"):
                     if not self._spj_config or not self._spj_version:
@@ -162,10 +163,19 @@ class JudgeClient(object):
                         run_result["result"] = _judger.RESULT_SYSTEM_ERROR
                         run_result["error"] = _judger.ERROR_SPJ_ERROR
                 else:
-                    run_result["output_md5"], is_ac = self._compare_output(test_case_file_id, user_output_file)
+                    run_result["output_md5"], is_ac, uout = self._compare_output(test_case_file_id, user_output_file)
                     # -1 == Wrong Answer
                     if not is_ac:
                         run_result["result"] = _judger.RESULT_WRONG_ANSWER
+                        inData = ""
+                        with open(os.path.join(self._test_case_dir, str(test_case_file_id) + ".in")) as f:
+                            inData = f.read()
+                        outData = ""
+                        with open(os.path.join(self._test_case_dir, str(test_case_file_id) + ".out")) as f:
+                            outData = f.read()
+                        limit = 50
+                        data = {"in": str(inData) if len(str(inData)) < limit else str(inData)[0:limit] + "...", "out": str(outData) if len(str(outData)) < limit else str(outData)[0:limit] + "..."}
+                        run_result["custom"] = {"data": data, "uout": uout or " "}
 
         if self._output:
             try:
